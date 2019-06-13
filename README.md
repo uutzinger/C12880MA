@@ -1,9 +1,10 @@
 # C12880MA
-C12880 mini spectrometer code for teensy
+C12880 mini spectrometer code for teensy.
+This code has not been tested yet. Expect by Fall 2019.
 
 Code for reading of Hamamatsu spectrometer with teensy 3.x microcontroller.
-Uses externally triggered ADC and DMA. Clock is adjustable.
-This needs modified ADC library with external triggering functions (provided).
+It uses externally triggered ADC and DMA. The clock is adjustable.
+This needs modified ADC library with external triggering functions (provided and tested).
 
 The hardware can be purchased here
 https://groupgets.com/manufacturers/hamamatsu-photonics/products/c12880ma-micro-spectrometer
