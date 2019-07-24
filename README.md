@@ -8,7 +8,7 @@ This needs ADC library with exterbal triggering functions (provided).
 The hardware can be purchased here
 https://groupgets.com/manufacturers/hamamatsu-photonics/products/c12880ma-micro-spectrometer
 
-Connections to several pins on Teensy will need to be made according the instructions in the header of the program.
+Connections to several pins on Teensy will need to be made:
 
 C12880MA             Teensy 3.2
 ==============================================================================================
@@ -20,3 +20,4 @@ SPEC_VIDEO           14 // Sensor signal, analog in, buffered, low impedance to 
 SPEC_EOS             13 // Sensor End of Scan, to microcontroller
 FLASH_TRIGGER        18 // Light on/off from microcontroller will also work on other pins
 
+Urs Utzinger, Summer 2019
