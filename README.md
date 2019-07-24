@@ -18,7 +18,7 @@ C12880MA  => Teensy 3.2
 
 SPEC_CLK => 23 // From Teensy to Spetrometer
 
-SPEC_CLK => 21 // CLK cycles are counted with teensy interrupt
+SPEC_CLK => 21 // CLK cycles are counted with teensy interrupt, pin 21 and 23 both need to be connected to SPEC_CLK
 
 SPEC_TRG => 11 // From Spectrometer to Teensy, ADC signal trigger
 
