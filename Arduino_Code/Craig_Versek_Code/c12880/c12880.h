@@ -6,10 +6,14 @@
 #define _C12880_H_INCLUDED
 
 #include <Arduino.h>
+
+#if defined(CORE_TEENSY)
 #include <ADC.h> /* https://github.com/pedvide/ADC */
+#endif
+
 #define C12880_NUM_CHANNELS 288
 //uncomment for experimental feature, WARNING creates artifacts above 96MHz system clock
-#define MICROSPEC_ADC_PIPELINE
+//#define MICROSPEC_ADC_PIPELINE
 /*******************************************************************************
   C12880_Class
   
@@ -39,11 +43,15 @@ private:
   int _ST_pin;
   int _CLK_pin;
   int _VIDEO_pin;
+  #if defined(CORE_TEENSY)
   ADC *_adc; // adc object
+  #endif
   int _clock_delay_micros;
   float _integ_time;
   int _min_integ_micros;
   unsigned int _timings[10];
 };
+
+
 
 #endif /* _C12880_H_INCLUDED */

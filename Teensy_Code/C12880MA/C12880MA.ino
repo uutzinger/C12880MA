@@ -41,6 +41,7 @@
 // SPEC_EOS             13 // Sensor End of Scan, to microcontroller
 // The above connections are mandatory. 
 // FLASH_TRIGGER        18 // Light on/off from microcontroller
+// LASER_TRIGGER        17 // 405 Laser on/off from microcontroller
 // The above connection is voluntary. 
 //
 // Some breakout boards such as the 
@@ -95,6 +96,7 @@
 #define SPEC_VIDEO           14 // Sensor signal, buffered, low impedance to microcontroller
 #define SPEC_EOS             13 // Sensor End of Scan, to microcontroller
 #define FLASH_TRIGGER        18 // Light on/off from microcontroller
+#define LASER_TRIGGER        17 // Light on/off from microcontroller
 #define INT_Pin              21 // Connect to SPEC_CLK to count clock cycles
 // ----------------------------------------------------------
 // PWM pins can be 3,4,5,6,9,10,20,21,22,23,25,32
@@ -116,7 +118,7 @@
 // ----------------------------------------------------------
 // States:
 // ----------------------------------------------------------
-// Idle:        Do nothing related to sensor readout
+// Waiting:     Do nothing related to sensor readout
 // PreStart:    Prepare start
 // Start_ST:    Run 1 clock cycle then set ST high
 // Stop_ST:     Run 3 clocks + integrationtime - 48 clocks then set ST low
@@ -125,30 +127,31 @@
 // ----------------------------------------------------------
 // [In this implementation ADC is started when ST goes low and stopped when EOS goes high]
 
-enum states {preStart, startST, stopST, preReadout, readout, idle, userInput, trasferData};
-volatile states myState = idle;
-
-// Interrupt Counter
+// Volatile variables used in interrupt service routines
+enum states {preStart, startST, stopST, preReadout, readout, waiting, userInput, trasferData};
+volatile states myState = waiting;
 volatile long int count = 0; 
 volatile long int integrationCounts=0;
-volatile bool spectrumReady = false;
-float  integrationTime = 0.01;
+volatile bool     spectrumReady = false;
+volatile uint32_t pdbticks, adcticks, adcval, last_read;
+volatile bool     adc0_busy = false;
+volatile bool     flashEnabled = false;
+volatile bool     LASEREnabled = false;
 
+// Regular global variables
+float  integrationTime = 0.01;
 uint16_t CLK_Pin       = SPEC_CLK;                       // Pin to connect spectrometer clock
 uint32_t CPU_Frequency = F_CPU/1E6;                      // MHz
 uint32_t CLK_Frequency = 200000;                         // Clock Frequency
 uint32_t PWM_MaxFreq;                                    //
 uint16_t PWM_Resolution=4;                               // 4: 0..15
-uint16_t PWM_MaxValue;                                   // if resolution is 4 then max value is 15
+uint16_t PWM_MaxValue;                                   // if resolution is 4 then max value is 15 pow(2,PWM_Resolution)
 float    PWM_Duty      = 50.0;                           // a nice symmetric clock
 bool     highSpeed     = true;                           // Very high speed for sampling and conversion
-bool     verbose       = true;                           // Transmitt date in verbose mode
+bool     verboseMode   = true;                           // Transmitt date in verbose mode
 bool     continous     = false;                          // Dont start with continous transmission
 bool     aPlotter      = false;                          // Format data for Arduino serial plotter
-// variables used in the interrupt service routines (need to be volatile)
-volatile uint32_t pdbticks, adcticks, adcval, last_read;
-volatile bool     adc0_busy = false;
-volatile bool     flashEnabeld = false;
+
 
 /******************************************************************************/
 ADC *adc = new ADC();
@@ -191,20 +194,21 @@ void counterloop() {
   if (count <= 0) { 
     switch(myState)
     {       
-      case idle:
+      case waiting:
         // do nothing                     
         break;
       case preStart:
         myState = startST;
         count = 1;
         break;
-      case startST:      
-        digitalWriteFast(SPEC_ST, HIGH); 
-        if (flashEnabeld) { digitalWrite(FLASH_TRIGGER,HIGH); }
+      case startST:
+        if (flashEnabled) { digitalWriteFast(FLASH_TRIGGER,HIGH); }
+        if (LASEREnabled) { digitalWriteFast(LASER_TRIGGER,HIGH); }
+        digitalWriteFast(SPEC_ST, HIGH);
         myState = stopST;
-        count =  integrationCounts; // 3+integrationtime-48;  
+        count =  integrationCounts; // 3+integrationtime-48;
         break;
-      case stopST:       
+      case stopST:
         digitalWriteFast(SPEC_ST, LOW); 
         myState = preReadout;
         count = 88; // 48+40;                 
@@ -216,14 +220,13 @@ void counterloop() {
         break;
       case readout:  
         // complete ADC 
-        myState = idle;
+        myState = waiting;
         break;
       default:
         break;
     }
   }
 }
-
 
 /******************************************************************************/
 // Programmable Delay Block Interrupt Service Routine
@@ -260,7 +263,8 @@ void EOS_isr() {
   dma0.disable();
   adc->disableDMA(ADC_0);
   adc->adc0->stopExtTrigPDB(true);
-  if (flashEnabeld) { digitalWrite(FLASH_TRIGGER,LOW); }
+  if (flashEnabled) { digitalWriteFast(FLASH_TRIGGER,LOW); }
+  if (LASEREnabled) { digitalWriteFast(LASER_TRIGGER,LOW); }
 }
 
 /******************************************************************************/
@@ -309,9 +313,10 @@ void setADC() {
 }
 
 // SET CLK signal on CLK pin using PWM modulation. Usually duty cycle is 50.0%
-void setCLK(uint16_t CLK_pin, uint32_t CLK_Frequency, float PWM_Duty, float PWM_MaxValue){
+void setCLK(uint16_t CLK_pin, uint32_t CLK_Frequency, float PWM_Duty, float PWM_MaxValue, uint16_t PWM_Resolution){
+  analogWriteResolution(PWM_Resolution);
   analogWriteFrequency(CLK_pin, CLK_Frequency);
-  analogWrite(CLK_pin, uint16_t(PWM_Duty*PWM_MaxValue/100.0));
+  analogWrite(CLK_pin, uint16_t(PWM_Duty*PWM_MaxValue/100.0)); // between 0 and PWM_MaxValue,  0 always low, PWM_MaxValue always high
 }
 
 /******************************************************************************/
@@ -331,7 +336,7 @@ void transmitSpectrum(uint16_t *data) {
     }
     mySerial.write('\n');
   } else {
-    if (!verbose) {
+    if (!verboseMode) {
       for (i = 0; i < C12880_NUM_CHANNELS+88+1; i++) {
         mySerial.write( (byte *) &data[i], sizeof(data[i]));
       }
@@ -356,6 +361,7 @@ void printHelp() {
   mySerial.println("Set  CLK duty: .................... P50");
   mySerial.println("Show CLK duty: .................... p");
   mySerial.println("Use/dont use flash: ............... F/f");
+  mySerial.println("Use/dont use LASER: ............... L/l");
   mySerial.println("Use/dont use high speed conversion: H/h");
   mySerial.println("Set ADC parameters: ............... s");
   mySerial.println("Aquire spectrum: .................. x");
@@ -385,7 +391,7 @@ void processInstruction(String instruction) {
   if (command =='I') { // set integration Time
     integrationTime = value.toFloat();
     if ((integrationTime < 0.0) || (integrationTime > 9999.99)) { mySerial.println("Integration time out of valid Range"); }
-      if (myState == idle) {
+      if (myState == waiting) {
         mySerial.printf("Integratin time is: %g\n", integrationTime);
         integrationCounts = uint32_t(integrationTime * float(CLK_Frequency)) - 45;  // 3 + integrationTime - 48 
       } else { mySerial.printf("Instrument is reading data, can not change readout parameters!"); }
@@ -393,17 +399,24 @@ void processInstruction(String instruction) {
     mySerial.printf("Integration time is: %g\n", integrationTime);
 
   } else if (command == "f") { // turn off flash
-    flashEnabeld = false;
-    mySerial.printf("Flash is off\n");
+    flashEnabled = false;
+    mySerial.printf("Flash is disenabled\n");
   } else if (command == "F") { // turn on flash
-    flashEnabeld = true;
-    mySerial.println("Flash is on\n");
+    flashEnabled = true;
+    mySerial.println("Flash is enabled\n");
   
+  } else if (command == "l") { // turn off LASER
+    LASEREnabled = false;
+    mySerial.printf("LASER is disabled\n");
+  } else if (command == "L") { // turn on LASER
+    LASEREnabled = true;
+    mySerial.println("LASER is enabled\n");
+
   } else if (command == "b") { // verbose
-    verbose = false;
+    verboseMode = false;
     mySerial.printf("Verbose is on\n");
   } else if (command == "B") { // binary
-    verbose = true;
+    verboseMode = true;
     mySerial.printf("Binary is on\n");
 
   } else if (command == "a") { // regular data transmission
@@ -415,18 +428,18 @@ void processInstruction(String instruction) {
 
   } else if (command == "x") { // expose and measure
     mySerial.printf("Reading Spectrum\n");
-    if (myState == idle) {
+    if (myState == waiting) {
       myState = preStart;
     } else { mySerial.printf("Instrument is reading data, can not start reading!"); }
 
   } else if (command == "h") { // verbose
-    if (myState == idle) { 
+    if (myState == waiting) { 
     highSpeed = false;
     setADC(); 
     mySerial.printf("Highspeed sampling is off\n");
     } else { mySerial.printf("Instrument is reading data, can not change readout parameters!"); }
   } else if (command == "H") { // binary
-    if (myState == idle) { 
+    if (myState == waiting) { 
     highSpeed = true;
     setADC();
     mySerial.printf("Highspeed sampling is on\n");
@@ -434,14 +447,14 @@ void processInstruction(String instruction) {
 
   } else if (command == "s") { // set ADC and readout electronics
     mySerial.printf("Programming Readout Electronics\n");
-    if (myState == idle) {
-      setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue);
+    if (myState == waiting) {
+      setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue, PWM_Resolution);
       setADC();
     } else { mySerial.printf("Instrument is reading data, can not change readout parameters!"); }
 
   } else if (command == "r") { // readout once
     continous = false;
-    if (myState == idle) {
+    if (myState == waiting) {
       transmitSpectrum(spectrum);
       spectrumReady = false;
     } else { mySerial.printf("Instrument is already reading data!"); }
@@ -450,22 +463,24 @@ void processInstruction(String instruction) {
 
   } else if (command == "C") { // set readout clock
     tempInt = value.toInt();
-    if ((PWM_MaxFreq > tempInt) && (tempInt >= 50000)) {
-      if (myState == idle) {
+    if ((PWM_MaxFreq > uint32_t(tempInt)) && (tempInt >= 50000)) {
+      if (myState == waiting) {
         CLK_Frequency = tempInt;
-        setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue);
+        setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue, PWM_Resolution);
         integrationCounts = uint32_t(integrationTime * float(CLK_Frequency)) - 45;  // 3 + integrationTime - 48 
+        mySerial.printf("CLK Frequency is: %u\n", CLK_Frequency);
       } else { mySerial.printf("Instrument is reading data, can not change readout parameters!"); }
     }
   } else if (command == "c") {
     mySerial.printf("CLK Frequency is: %u\n", CLK_Frequency);
 
   } else if (command == "P") { // set clock duty cycle
-    tempInt = value.toFloat();
+    tempFloat = value.toFloat();
     if ((tempFloat < 100.0) && (tempFloat > 0.0)) {
-      if (myState == idle) {
+      if (myState == waiting) {
         PWM_Duty = tempFloat;
-        setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue);
+        setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue, PWM_Resolution);
+        mySerial.printf("CLK Dutycycle is: %f\n", PWM_Duty);
       } else { mySerial.printf("Instrument is reading data, can not change readout parameters!"); }
     } 
   } else if (command == "p") {
@@ -520,12 +535,14 @@ void setup(){
   pinMode(SPEC_EOS,      INPUT);
   pinMode(INT_Pin,       INPUT);
   pinMode(FLASH_TRIGGER, OUTPUT);
+  pinMode(LASER_TRIGGER, OUTPUT);
   pinMode(SERIAL_TX,     OUTPUT);
   pinMode(SERIAL_RX,     INPUT);
 
   digitalWriteFast(SPEC_ST,       LOW); 
   digitalWriteFast(CLK_Pin,       LOW); 
   digitalWriteFast(FLASH_TRIGGER, LOW); 
+  digitalWriteFast(LASER_TRIGGER, LOW); 
   digitalWriteFast(SERIAL_TX,     LOW); 
 
   attachInterrupt(INT_Pin,  counterloop,  RISING);
@@ -533,11 +550,11 @@ void setup(){
   attachInterrupt(SPEC_ST,  STfall_isr,   FALLING); // shortly before video starts to start ADC
 
   // Start Clock
-  setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue);
+  setCLK(CLK_Pin, CLK_Frequency, PWM_Duty, PWM_MaxValue, PWM_Resolution);
   setADC();
 
   count = 1;
-  myState = idle;
+  myState = waiting;
 
 } // end setup
 
@@ -548,7 +565,7 @@ int    bytesread;
 
 void loop(){
   if (mySerial.available()) {
-     if (myState == idle) {
+     if (myState == waiting) {
        bytesread=mySerial.readBytesUntil('\n', inBuff, 16); // Read from serial until CR is read or timeout exceeded
        inBuff[bytesread]='\0';
        String instruction = String(inBuff);
@@ -557,7 +574,7 @@ void loop(){
   }
 
   if (continous) {
-    if ((myState == idle) && (spectrumReady==false)) {
+    if ((myState == waiting) && (spectrumReady==false)) {
       myState = preStart;
     }
     if (spectrumReady == true) {
