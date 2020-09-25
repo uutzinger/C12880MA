@@ -1,5 +1,5 @@
 // *********************************************************************************************//
-// Hamamtsu C12880 sensor control with Teensy 3
+// Hamamatsu C12880 sensor control with Teensy 3
 // *********************************************************************************************//
 // This sofware requires a Teensy 3.x Microcontroller.
 // This software utilizes a microncotroller genereated clock to synchorinze readout of the 
