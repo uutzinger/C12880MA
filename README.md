@@ -1,5 +1,5 @@
 # C12880MA
-C12880 mini spectrometer code for Teensy 3.x
+C12880 mini spectrometer code for Teensy 3.x (Teensy 4.x is not supported)
 
 This code reads Hamamatsu spectrometer using the spectrometer provided ADC trigger signal and DMA. 
 The ADC clock is adjustable but the Teensy is limitted to about 800kS/s.
