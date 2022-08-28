@@ -3,7 +3,7 @@ C12880 mini spectrometer code for Teensy 3.x
 
 This code reads Hamamatsu spectrometer using the spectrometer provided ADC trigger signal and DMA. 
 The ADC clock is adjustable but the Teensy is limitted to about 800kS/s.
-The Teensy ADC library (with external cloclock option) is needed.
+The Teensy ADC library (with external clock option) is needed (included in this repo).
 
 The hardware can be purchased here https://groupgets.com/manufacturers/hamamatsu-photonics/products/c12880ma-micro-spectrometer
 
@@ -31,5 +31,5 @@ FLASH_TRIGGER => 18 // Light on/off from Teensy, will also work on other pins
 
 Connect either 5V or 3.3V to Groupgets board, not both.
 
-Do not place the Groupgets board onto your desk without first attaching insultation ontp the back of the PCB.
+Do not place the Groupgets board onto your desk without first attaching insultation to the back of the PCB.
 If the board is no longer working, likely the voltage regulator was shorted and needs to be replaced.
