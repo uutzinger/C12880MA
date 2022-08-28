@@ -3,7 +3,7 @@ C12880 mini spectrometer code for Teensy 3.x
 
 This code reads Hamamatsu spectrometer using the spectrometer provided ADC trigger signal and DMA. 
 The ADC clock is adjustable but the Teensy is limitted to about 800kS/s.
-The Teensy ADC library (with external clock option) is needed (included in this repo).
+The Teensy ADC library (with external clock option) is needed (modified from original library: https://github.com/uutzinger/ADC).
 
 The hardware can be purchased here https://groupgets.com/manufacturers/hamamatsu-photonics/products/c12880ma-micro-spectrometer
 
